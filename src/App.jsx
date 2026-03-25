@@ -489,6 +489,27 @@ function AdminPanel({ surveys, loading }) {
   const [mode, setMode]                   = useState("list");
   const [editingSurvey, setEditingSurvey] = useState(null);
   const [saving, setSaving]               = useState(false);
+  const [duplicating, setDuplicating]     = useState(null); // survey to duplicate
+  const [dupTitle, setDupTitle]           = useState("");
+  const [dupSaving, setDupSaving]         = useState(false);
+
+  const startDuplicate = s => { setDuplicating(s); setDupTitle(s.title + " (copia)"); };
+  const confirmDuplicate = async () => {
+    if (!dupTitle.trim()) return;
+    setDupSaving(true);
+    try {
+      await addDoc(collection(db,"surveys"), {
+        title: dupTitle,
+        category: duplicating.category,
+        anonymous: duplicating.anonymous ?? false,
+        questions: JSON.parse(JSON.stringify(duplicating.questions)),
+        createdAt: new Date().toLocaleDateString("es-AR"),
+        responses: []
+      });
+      setDuplicating(null); setDupTitle("");
+    } catch(e) { console.error(e); }
+    setDupSaving(false);
+  };
 
   const handleCreate = async data => {
     setSaving(true);
@@ -515,6 +536,24 @@ function AdminPanel({ surveys, loading }) {
 
   return (
     <div>
+      {/* Duplicate modal */}
+      {duplicating && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:16}}>
+          <div style={{background:"var(--white)",border:"1px solid var(--border)",borderRadius:12,padding:"36px 32px",width:"100%",maxWidth:400,position:"relative"}}>
+            <button onClick={()=>setDuplicating(null)} style={{position:"absolute",top:14,right:14,background:"none",border:"none",cursor:"pointer",color:"var(--muted)",fontSize:"1.1rem"}}>✕</button>
+            <div style={{fontFamily:"var(--serif)",fontSize:"1.3rem",fontWeight:600,marginBottom:8}}>Duplicar encuesta</div>
+            <div style={{color:"var(--muted)",fontSize:"0.83rem",marginBottom:24,lineHeight:1.6}}>Se copiará la estructura completa sin respuestas. Ingresá el nombre para la nueva encuesta.</div>
+            <div className="field">
+              <label className="label">Nombre de la copia</label>
+              <input className="input" value={dupTitle} onChange={e=>setDupTitle(e.target.value)} onKeyDown={e=>e.key==="Enter"&&confirmDuplicate()} autoFocus/>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:8}}>
+              <button className="btn btn-secondary" style={{flex:1,justifyContent:"center"}} onClick={()=>setDuplicating(null)}>Cancelar</button>
+              <button className="btn btn-primary" style={{flex:1,justifyContent:"center"}} onClick={confirmDuplicate} disabled={!dupTitle.trim()||dupSaving}>{dupSaving?"Duplicando…":"Duplicar"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="section-header">
         <div><div className="section-title">Encuestas</div><div className="section-sub">{surveys.length} registrada{surveys.length!==1?"s":""}</div></div>
         <button className="btn btn-primary" onClick={()=>setMode("create")}>+ Nueva encuesta</button>
@@ -531,6 +570,7 @@ function AdminPanel({ surveys, loading }) {
           </div>
           <div style={{display:"flex",gap:8,flexShrink:0}}>
             <button className="btn btn-secondary btn-sm" onClick={()=>{setEditingSurvey(s);setMode("edit");}}>✎ Editar</button>
+            <button className="btn btn-secondary btn-sm" onClick={()=>startDuplicate(s)} title="Duplicar">⧉ Duplicar</button>
             <button className="btn btn-danger btn-sm" onClick={()=>del(s.id)}>Eliminar</button>
           </div>
         </div>
