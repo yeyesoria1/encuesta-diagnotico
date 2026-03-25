@@ -612,7 +612,7 @@ function RespondSurvey({ surveys, loading }) {
 
   return (
     <div>
-      <div className="section-header"><div><div className="section-title">Completar encuesta</div><div className="section-sub">Seleccioná la encuesta e ingresá tus datos</div></div></div>
+      <div className="section-header"><div><div className="section-title">Completar encuesta</div><div className="section-sub">Seleccioná la encuesta que querés completar</div></div></div>
       {!surveys.length?<div className="empty"><div className="empty-icon">○</div><div>No hay encuestas disponibles aún.</div></div>:(
         <div className="card">
           <div className="field"><label className="label">Nombre o identificador</label><input className="input" value={respondent} onChange={e=>setRespondent(e.target.value)} placeholder="Ej: María García / Área Administración"/></div>
