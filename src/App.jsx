@@ -395,39 +395,36 @@ function LoginModal({ onSuccess, onCancel }) {
   );
 }
 
-// ─── Admin Panel ──────────────────────────────────────────────────────────────
-function AdminPanel({ surveys, loading }) {
-  const [mode,setMode]=useState("list"),[title,setTitle]=useState(""),[category,setCategory]=useState(SURVEY_CATEGORIES[0]);
-  const [questions,setQuestions]=useState([]),[qText,setQText]=useState(""),[qType,setQType]=useState("scale");
-  const [qOptions,setQOptions]=useState(["",""]),[saving,setSaving]=useState(false);
+// ─── Shared Survey Form (create & edit) ──────────────────────────────────────
+function SurveyForm({ initial, onSave, onCancel, saving }) {
+  const [title, setTitle]         = useState(initial?.title || "");
+  const [category, setCategory]   = useState(initial?.category || SURVEY_CATEGORIES[0]);
+  const [anonymous, setAnonymous] = useState(initial?.anonymous ?? false);
+  const [questions, setQuestions] = useState(initial?.questions ? JSON.parse(JSON.stringify(initial.questions)) : []);
+  const [qText, setQText]         = useState("");
+  const [qType, setQType]         = useState("scale");
+  const [qOptions, setQOptions]   = useState(["", ""]);
+  const [editingQId, setEditingQId] = useState(null);
+  const [editQText, setEditQText]   = useState("");
+  const isEditing = !!initial;
 
-  const addQ=()=>{ if(!qText.trim()) return; const q={id:Date.now(),text:qText,type:qType}; if(qType==="multiple") q.options=qOptions.filter(o=>o.trim()); setQuestions([...questions,q]); setQText(""); setQOptions(["",""]); };
-  const save=async()=>{ if(!title.trim()||!questions.length) return; setSaving(true); try { await addDoc(collection(db,"surveys"),{title,category,questions,createdAt:new Date().toLocaleDateString("es-AR"),responses:[]}); setTitle(""); setCategory(SURVEY_CATEGORIES[0]); setQuestions([]); setMode("list"); } catch(e){console.error(e);} setSaving(false); };
-  const del=async id=>{ if(!confirm("¿Eliminar esta encuesta y todas sus respuestas?")) return; await deleteDoc(doc(db,"surveys",id)); };
-
-  if (loading) return <div className="loading"><div className="spinner"></div>Cargando…</div>;
-
-  if (mode==="list") return (
-    <div>
-      <div className="section-header">
-        <div><div className="section-title">Encuestas</div><div className="section-sub">{surveys.length} registrada{surveys.length!==1?"s":""}</div></div>
-        <button className="btn btn-primary" onClick={()=>setMode("create")}>+ Nueva encuesta</button>
-      </div>
-      {!surveys.length && <div className="empty"><div className="empty-icon">○</div><div>No hay encuestas aún.</div></div>}
-      {surveys.map(s=>(
-        <div className="survey-item" key={s.id}>
-          <div><div className="survey-name">{s.title}</div><div className="survey-meta">{s.category} · {s.questions.length} preguntas · {(s.responses||[]).length} respuestas · {s.createdAt}</div></div>
-          <button className="btn btn-danger btn-sm" onClick={()=>del(s.id)}>Eliminar</button>
-        </div>
-      ))}
-    </div>
-  );
+  const addQ = () => {
+    if (!qText.trim()) return;
+    const q = { id: Date.now(), text: qText, type: qType };
+    if (qType === "multiple") q.options = qOptions.filter(o => o.trim());
+    setQuestions([...questions, q]); setQText(""); setQOptions(["", ""]);
+  };
+  const startEditQ = q => { setEditingQId(q.id); setEditQText(q.text); };
+  const saveEditQ  = id => { setQuestions(questions.map(q => q.id===id ? {...q, text:editQText} : q)); setEditingQId(null); };
 
   return (
     <div>
       <div className="section-header">
-        <div><div className="section-title">Nueva encuesta</div><div className="section-sub">Completá los datos y agregá preguntas</div></div>
-        <button className="btn btn-secondary" onClick={()=>setMode("list")}>← Volver</button>
+        <div>
+          <div className="section-title">{isEditing ? "Editar encuesta" : "Nueva encuesta"}</div>
+          <div className="section-sub">{isEditing ? `Editando: ${initial.title}` : "Completá los datos y agregá preguntas"}</div>
+        </div>
+        <button className="btn btn-secondary" onClick={onCancel}>← Volver</button>
       </div>
       <div className="card">
         <div className="card-title">Datos generales</div>
@@ -435,19 +432,113 @@ function AdminPanel({ surveys, loading }) {
           <div className="field"><label className="label">Título</label><input className="input" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ej: Diagnóstico Q1 2025"/></div>
           <div className="field"><label className="label">Categoría</label><select className="select" value={category} onChange={e=>setCategory(e.target.value)}>{SURVEY_CATEGORIES.map(c=><option key={c}>{c}</option>)}</select></div>
         </div>
+        <div style={{display:"flex",alignItems:"center",gap:12,paddingTop:12,borderTop:"1px solid var(--border)",marginTop:4}}>
+          <button onClick={()=>setAnonymous(!anonymous)} style={{width:40,height:22,borderRadius:11,border:"none",cursor:"pointer",transition:"background 0.2s",background:anonymous?"#1a1a1a":"#d0d0cc",position:"relative",flexShrink:0}}>
+            <span style={{position:"absolute",top:3,left:anonymous?20:3,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left 0.2s",display:"block"}}/>
+          </button>
+          <div>
+            <div style={{fontSize:"0.85rem",fontWeight:500}}>{anonymous?"Respuestas anónimas":"Requiere identificación"}</div>
+            <div style={{fontSize:"0.74rem",color:"var(--muted)",marginTop:2}}>{anonymous?"Los respondentes no ingresarán su nombre":"Los respondentes deben ingresar su nombre o área"}</div>
+          </div>
+        </div>
       </div>
+
+      {!!questions.length && (
+        <div className="card">
+          <div className="card-title">Preguntas ({questions.length})</div>
+          {questions.map((q,i) => (
+            <div className="q-item" key={q.id}>
+              {editingQId===q.id ? (
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <input className="input" value={editQText} onChange={e=>setEditQText(e.target.value)} onKeyDown={e=>e.key==="Enter"&&saveEditQ(q.id)} autoFocus style={{flex:1}}/>
+                  <button className="btn btn-primary btn-sm" onClick={()=>saveEditQ(q.id)}>✓</button>
+                  <button className="btn btn-secondary btn-sm" onClick={()=>setEditingQId(null)}>✕</button>
+                </div>
+              ) : (
+                <div className="q-item-header">
+                  <div style={{flex:1,fontSize:"0.88rem",lineHeight:1.5}}>
+                    <span style={{color:"var(--muted)",fontFamily:"var(--serif)",marginRight:8}}>{i+1}.</span>{q.text}
+                    {q.type==="multiple"&&q.options&&<div style={{marginTop:5,color:"var(--muted)",fontSize:"0.76rem"}}>{q.options.join(" · ")}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                    <span className="q-type-badge">{QUESTION_TYPES.find(t=>t.value===q.type)?.label}</span>
+                    <button className="btn btn-secondary btn-sm" onClick={()=>startEditQ(q)} title="Editar texto">✎</button>
+                    <button className="btn btn-danger btn-sm" onClick={()=>setQuestions(questions.filter(x=>x.id!==q.id))}>✕</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="card">
         <div className="card-title">Agregar pregunta</div>
-        <div className="field"><label className="label">Pregunta</label><input className="input" value={qText} onChange={e=>setQText(e.target.value)} placeholder="Ej: ¿Cómo calificás la comunicación entre áreas?"/></div>
+        <div className="field"><label className="label">Pregunta</label><input className="input" value={qText} onChange={e=>setQText(e.target.value)} placeholder="Ej: ¿Cómo calificás la comunicación entre áreas?" onKeyDown={e=>e.key==="Enter"&&addQ()}/></div>
         <div className="field"><label className="label">Tipo</label><select className="select" value={qType} onChange={e=>{setQType(e.target.value);setQOptions(["",""]);}}>{QUESTION_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}</select></div>
-        {qType==="multiple" && <div className="field"><label className="label">Opciones</label><div className="q-options">{qOptions.map((opt,i)=><div className="q-opt-row" key={i}><input className="input" value={opt} placeholder={`Opción ${i+1}`} onChange={e=>{const o=[...qOptions];o[i]=e.target.value;setQOptions(o);}}/>{qOptions.length>2&&<button className="btn btn-danger btn-sm" onClick={()=>setQOptions(qOptions.filter((_,j)=>j!==i))}>✕</button>}</div>)}<button className="btn btn-secondary btn-sm" style={{alignSelf:"flex-start"}} onClick={()=>setQOptions([...qOptions,""])}>+ Opción</button></div></div>}
+        {qType==="multiple"&&<div className="field"><label className="label">Opciones</label><div className="q-options">{qOptions.map((opt,i)=><div className="q-opt-row" key={i}><input className="input" value={opt} placeholder={`Opción ${i+1}`} onChange={e=>{const o=[...qOptions];o[i]=e.target.value;setQOptions(o);}}/>{qOptions.length>2&&<button className="btn btn-danger btn-sm" onClick={()=>setQOptions(qOptions.filter((_,j)=>j!==i))}>✕</button>}</div>)}<button className="btn btn-secondary btn-sm" style={{alignSelf:"flex-start"}} onClick={()=>setQOptions([...qOptions,""])}>+ Opción</button></div></div>}
         <button className="btn btn-outline" onClick={addQ}>Agregar pregunta →</button>
       </div>
-      {!!questions.length && <div className="card"><div className="card-title">Preguntas ({questions.length})</div>{questions.map((q,i)=><div className="q-item" key={q.id}><div className="q-item-header"><div style={{flex:1,fontSize:"0.88rem",lineHeight:1.5}}><span style={{color:"var(--muted)",fontFamily:"var(--serif)",marginRight:8}}>{i+1}.</span>{q.text}{q.type==="multiple"&&q.options&&<div style={{marginTop:6,color:"var(--muted)",fontSize:"0.76rem"}}>{q.options.join(" · ")}</div>}</div><div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}><span className="q-type-badge">{QUESTION_TYPES.find(t=>t.value===q.type)?.label}</span><button className="btn btn-danger btn-sm" onClick={()=>setQuestions(questions.filter(x=>x.id!==q.id))}>✕</button></div></div></div>)}</div>}
-      {!!questions.length&&title.trim()&&<div style={{display:"flex",justifyContent:"flex-end"}}><button className="btn btn-primary" onClick={save} disabled={saving}>{saving?"Guardando…":"Guardar encuesta"}</button></div>}
+      {!!questions.length&&title.trim()&&<div style={{display:"flex",justifyContent:"flex-end"}}><button className="btn btn-primary" onClick={()=>onSave({title,category,anonymous,questions})} disabled={saving}>{saving?"Guardando…":isEditing?"Guardar cambios":"Guardar encuesta"}</button></div>}
     </div>
   );
 }
+
+// ─── Admin Panel ──────────────────────────────────────────────────────────────
+function AdminPanel({ surveys, loading }) {
+  const [mode, setMode]                   = useState("list");
+  const [editingSurvey, setEditingSurvey] = useState(null);
+  const [saving, setSaving]               = useState(false);
+
+  const handleCreate = async data => {
+    setSaving(true);
+    try { await addDoc(collection(db,"surveys"),{...data,createdAt:new Date().toLocaleDateString("es-AR"),responses:[]}); setMode("list"); }
+    catch(e){console.error(e);}
+    setSaving(false);
+  };
+
+  const handleEdit = async data => {
+    setSaving(true);
+    try { await updateDoc(doc(db,"surveys",editingSurvey.id),{title:data.title,category:data.category,anonymous:data.anonymous,questions:data.questions}); setMode("list"); setEditingSurvey(null); }
+    catch(e){console.error(e);}
+    setSaving(false);
+  };
+
+  const del = async id => {
+    if (!confirm("¿Eliminar esta encuesta y todas sus respuestas?")) return;
+    await deleteDoc(doc(db,"surveys",id));
+  };
+
+  if (loading) return <div className="loading"><div className="spinner"></div>Cargando…</div>;
+  if (mode==="create") return <SurveyForm onSave={handleCreate} onCancel={()=>setMode("list")} saving={saving}/>;
+  if (mode==="edit"&&editingSurvey) return <SurveyForm initial={editingSurvey} onSave={handleEdit} onCancel={()=>{setMode("list");setEditingSurvey(null);}} saving={saving}/>;
+
+  return (
+    <div>
+      <div className="section-header">
+        <div><div className="section-title">Encuestas</div><div className="section-sub">{surveys.length} registrada{surveys.length!==1?"s":""}</div></div>
+        <button className="btn btn-primary" onClick={()=>setMode("create")}>+ Nueva encuesta</button>
+      </div>
+      {!surveys.length&&<div className="empty"><div className="empty-icon">○</div><div>No hay encuestas aún.</div></div>}
+      {surveys.map(s=>(
+        <div className="survey-item" key={s.id}>
+          <div>
+            <div className="survey-name">{s.title}</div>
+            <div className="survey-meta">
+              {s.category} · {s.questions.length} preguntas · {(s.responses||[]).length} respuestas · {s.createdAt}
+              <span style={{marginLeft:8,fontSize:"0.7rem",padding:"2px 7px",borderRadius:10,background:"var(--neutral-bg)",color:"var(--neutral)"}}>{s.anonymous?"Anónima":"Con identificación"}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,flexShrink:0}}>
+            <button className="btn btn-secondary btn-sm" onClick={()=>{setEditingSurvey(s);setMode("edit");}}>✎ Editar</button>
+            <button className="btn btn-danger btn-sm" onClick={()=>del(s.id)}>Eliminar</button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 // ─── Responder ────────────────────────────────────────────────────────────────
 function RespondSurvey({ surveys, loading }) {
@@ -484,9 +575,9 @@ function RespondSurvey({ surveys, loading }) {
       <div className="section-header"><div><div className="section-title">Completar encuesta</div><div className="section-sub">Seleccioná la encuesta e ingresá tus datos</div></div></div>
       {!surveys.length?<div className="empty"><div className="empty-icon">○</div><div>No hay encuestas disponibles aún.</div></div>:(
         <div className="card">
-          <div className="field"><label className="label">Nombre o identificador</label><input className="input" value={respondent} onChange={e=>setRespondent(e.target.value)} placeholder="Ej: María García / Área Administración / Anónimo"/></div>
+          <div className="field"><label className="label">Nombre o identificador</label><input className="input" value={respondent} onChange={e=>setRespondent(e.target.value)} placeholder="Ej: María García / Área Administración"/></div>
           <div className="field"><label className="label">Encuesta</label><div style={{display:"flex",flexDirection:"column",gap:8}}>{surveys.map(s=><div key={s.id} onClick={()=>setSelectedId(s.id)} style={{padding:"14px 18px",border:`1px solid ${selectedId===s.id?"var(--accent)":"var(--border)"}`,borderRadius:8,cursor:"pointer",background:selectedId===s.id?"var(--accent-light)":"var(--bg)",transition:"all 0.15s"}}><div style={{fontWeight:500,fontSize:"0.9rem"}}>{s.title}</div><div style={{fontSize:"0.76rem",color:"var(--muted)",marginTop:4}}>{s.category} · {s.questions.length} preguntas</div></div>)}</div></div>
-          <button className="btn btn-primary" disabled={!selectedId||!respondent.trim()} onClick={()=>setStep(1)}>Comenzar →</button>
+          <button className="btn btn-primary" disabled={!selectedId||(!surveys.find(s=>s.id===selectedId)?.anonymous&&!respondent.trim())} onClick={()=>setStep(1)}>Comenzar →</button>
         </div>
       )}
     </div>
